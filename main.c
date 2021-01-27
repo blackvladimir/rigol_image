@@ -40,13 +40,14 @@ int main(int argc, char * argv[]){
       printf("channel %d enabled\n", i + 1);
       char filename[20];
       sprintf(filename, "analog-1-%d-1", i + 1);
-      int fout = open(filename, O_WRONLY | O_CREAT);
+      int fout = open(filename, O_WRONLY | O_CREAT, 0660);
       if (fout < 0){
         printf("can not open %s\n", filename);
         return 1;
       }
 
       cmd(fd,":WAV:SOUR CHAN%d", i + 1); 
+      cmd(fd,":WAV:MODE RAW"); 
       cmd(fd,":WAV:FORM BYTE"); 
       cmd(fd,":WAV:PRE?"); 
       size = read(fd, buff, 50);
@@ -68,20 +69,22 @@ int main(int argc, char * argv[]){
       sscanf(buff, "%d,%d,%d,%d,%f,%f,%f,%f,%f,%f", &format, &type, &points, &count, &xincrement, &xorigin, &xreference, &yincrement, &yorigin, &yreference);
       printf("parsed %d,%d,%d,%d,%f,%f,%f,%f,%f,%f\n", format, type, points, count, xincrement, xorigin, xreference, yincrement, yorigin, yreference);
       cmd(fd,":WAV:START 1");  //TODO read in multpiple passes
-      cmd(fd,":WAV:STOP 1200");  //TODO read in multpiple passes
+      cmd(fd,":WAV:STOP 6000");  //TODO read in multpiple passes
       cmd(fd,":WAV:DATA?"); 
       size = read(fd, buff, 11);
       buff[size] = 0;
-      printf("readed %d, %s\n",size,  buff); 
-      int sum = 0;
+      int sum;
+      sscanf(buff, "#9%d", &sum);
+      printf("readed %d, %s, %d\n",size,  buff, sum); 
       do{
         size = read(fd, buff, 50);
-        printf("readed %d\n",size); 
-        sum += size;
-        for( int i =0; i < size; i++){
-          printf("%d\n", (unsigned char) buff[i]);
+        for( int i =0; i < size && sum > 0; i++, sum--){
           float val = (unsigned char) buff[i];
+          val -= yreference;
+          val -= yorigin;
+          val *= yincrement;
           write(fout, &val, 4); 
+          //printf("%d, %f\n", (unsigned char) buff[i], val);
         }
       }while(size == 50);
       printf("SUM %d %s %d\n", sum, filename, fout);
