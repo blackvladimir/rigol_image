@@ -61,11 +61,11 @@ zip_int64_t zip_cb(void *userdata, void *data, zip_uint64_t len, zip_source_cmd_
       char buff[50];
       int size;
       if (ctx->from == ctx->to){
-        size = 1000;
-        if (ctx->total > size){
+        size = 10000;
+        if (size > ctx->total){
           size = ctx->total;
         }
-        ctx->to = ctx->from + 1000;
+        ctx->to = ctx->from + size;
         cmd(ctx->fd,":WAV:START %d", ctx->from + 1); //indexed from 1 and including last position
         cmd(ctx->fd,":WAV:STOP %d", ctx->to);
         cmd(ctx->fd,":WAV:DATA?"); 
