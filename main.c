@@ -11,6 +11,9 @@ struct ChannelData{
   float yreference;
   float yorigin;
   float yincrement;
+  int total;
+  int from;
+  int to;
 };
 
 void cmd(int fd, const char * s, ...){
@@ -19,13 +22,12 @@ void cmd(int fd, const char * s, ...){
   va_start(args, s);
   int len = vsprintf(buffer, s, args);
   va_end(args);
-  buffer[len++] = '\n';
   write(fd, buffer, len); 
 }
 
 zip_int64_t zip_cb(void *userdata, void *data, zip_uint64_t len, zip_source_cmd_t command){
   struct ChannelData * ctx = userdata;
-  printf("CB CALLED %d %d\n", command, ctx->idx);
+  //printf("CB CALLED %d %d\n", command, ctx->idx);
   if (command == ZIP_SOURCE_SUPPORTS){
     return  zip_source_make_command_bitmap(ZIP_SOURCE_OPEN, ZIP_SOURCE_READ, ZIP_SOURCE_CLOSE, ZIP_SOURCE_STAT, ZIP_SOURCE_ERROR);
   }
@@ -42,45 +44,68 @@ zip_int64_t zip_cb(void *userdata, void *data, zip_uint64_t len, zip_source_cmd_
       buff[size] = 0;
       int format;
       int type;
-      int points;
       int count;
       float xincrement;
       float xorigin;
       float xreference;
-      float yincrement;
-      float yorigin;
-      float yreference;
-      sscanf(buff, "%d,%d,%d,%d,%f,%f,%f,%f,%f,%f", &format, &type, &points, &count, &xincrement, &xorigin, &xreference, &(ctx->yincrement), &(ctx->yorigin), &(ctx->yreference));
-      printf("parsed %d,%d,%d,%d,%f,%f,%f,%f,%f,%f\n", format, type, points, count, xincrement, xorigin, xreference, yincrement, yorigin, yreference);
-      cmd(ctx->fd,":WAV:START 1");  //TODO read in multpiple passes
-      cmd(ctx->fd,":WAV:STOP 6000");  //TODO read in multpiple passes
-      cmd(ctx->fd,":WAV:DATA?"); 
-      size = read(ctx->fd, buff, 11);
-      buff[size] = 0;
-      int sum;
-      sscanf(buff, "#9%d", &sum);
-      printf("readed %d, %s, %d\n",size,  buff, sum); 
+      printf("read %s\n", buff);
+      sscanf(buff, "%d,%d,%d,%d,%f,%f,%f,%f,%f,%f", &format, &type, &(ctx->total), &count, &xincrement, &xorigin, &xreference, &(ctx->yincrement), &(ctx->yorigin), &(ctx->yreference));
+      printf("parsed %d,%d,%d,%d,%f,%f,%f,%f,%f,%f\n", format, type, ctx->total, count, xincrement, xorigin, xreference, ctx->yincrement, ctx->yorigin, ctx->yreference);
+      ctx->from = 0;
+      ctx->to = 0;
   }
   if (command == ZIP_SOURCE_READ){
-      char buff[50];
-      int size = 50;
-      if (size * 4 > len){
-        size = len / 4;
+      if (ctx->total == 0){
+        return 0;
       }
-      size = read(ctx->fd, buff, size);
+      char buff[50];
+      int size;
+      if (ctx->from == ctx->to){
+        size = 1000;
+        if (ctx->total > size){
+          size = ctx->total;
+        }
+        ctx->to = ctx->from + 1000;
+        cmd(ctx->fd,":WAV:START %d", ctx->from + 1); //indexed from 1 and including last position
+        cmd(ctx->fd,":WAV:STOP %d", ctx->to);
+        cmd(ctx->fd,":WAV:DATA?"); 
+        int size = read(ctx->fd, buff, 11);
+        buff[size] = 0;
+        int sum;
+        sscanf(buff, "#9%d", &sum);
+        printf("readed %d, %s, %d, %d, %d\n",size,  buff, sum, ctx->from, ctx->to); 
+        //TODO check sum should be = form
+      }
+      int readlen = 50;
+      if (readlen * 4 > len){
+        readlen = len / 4;
+      }
+      if (readlen > (ctx->to - ctx->from)){
+        readlen = ctx->to - ctx->from;
+      }
+      ctx->from += readlen;
+      ctx->total -= readlen;
+      size = read(ctx->fd, buff, readlen);
+      if (size < 0){
+        printf("seconf attempt\n");
+        size = read(ctx->fd, buff, readlen);
+        if (size >= 0){
+          printf("seconf succesfull\n");
+        }
+      }
       if (size < 0){
         printf("end of file\n");  //TODO number of bytes is known so it does not need to try download last data
         return 0;
       }
       float *d = data;
-      printf("len %lu\n", len);
       for( int i =0; i < size; i++){ //TODO get rid of the last byte
         d[i] = (unsigned char) buff[i];
         d[i] -= ctx->yreference;
         d[i] -= ctx->yorigin;
         d[i] *= ctx->yincrement;
+        //printf("readed %f from %d", d[i], ctx->idx);
       }
-      printf("returning %d\n", size * 4);
+      //printf("returning %d\n", size * 4);
       return size * 4;
   }
   return 0;
