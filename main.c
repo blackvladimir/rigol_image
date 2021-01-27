@@ -85,6 +85,7 @@ zip_int64_t zip_cb(void *userdata, void *data, zip_uint64_t len, zip_source_cmd_
       }
       ctx->from += readlen;
       ctx->total -= readlen;
+      usleep(10);
       size = read(ctx->fd, buff, readlen);
       if (size < 0){
         printf("seconf attempt\n");
