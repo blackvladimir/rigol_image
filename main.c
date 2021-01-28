@@ -11,9 +11,17 @@ struct ChannelData{
   float yreference;
   float yorigin;
   float yincrement;
+  float xincrement;
   int total;
   int from;
   int to;
+};
+
+struct MetadataCtx{
+  struct ChannelData * ch;
+  int step;
+  int lastCh;
+  int chIdx;
 };
 
 void cmd(int fd, const char * s, ...){
@@ -23,6 +31,46 @@ void cmd(int fd, const char * s, ...){
   int len = vsprintf(buffer, s, args);
   va_end(args);
   write(fd, buffer, len); 
+}
+
+zip_int64_t metadata_cb(void *userdata, void *data, zip_uint64_t len, zip_source_cmd_t command){
+  struct MetadataCtx * ctx = userdata;
+  if (command == ZIP_SOURCE_SUPPORTS){
+    return  zip_source_make_command_bitmap(ZIP_SOURCE_OPEN, ZIP_SOURCE_READ, ZIP_SOURCE_CLOSE, ZIP_SOURCE_STAT, ZIP_SOURCE_ERROR);
+  }
+  if (command == ZIP_SOURCE_OPEN){
+    ctx->step = 0;
+    ctx->lastCh = 0;
+    ctx->chIdx = 0;
+  }
+  if (command == ZIP_SOURCE_READ){
+    if (ctx->step == 0){
+      int channels = 0;
+      float xinc;
+      for (int i = 0; i < 4; i++){
+        if (ctx->ch[i].fd){
+          channels++;
+          xinc = ctx->ch[i].xincrement;
+        }
+      }
+      ctx->step = 1;
+      return sprintf(data, "[device 1]\nsamplerate=%d Hz\ntotal analog=%d\n", (int)(1 / xinc), channels);
+      //source = zip_source_buffer(zip, "[device 1]\nsamplerate=500000000 Hz\ntotal analog=2\nanalog1=CH1\nanalog2=CH2", 72, 0); //TODO add channels and samplerate automaticaly
+    }
+    if (ctx->step == 1){
+      printf("channel metadata\n");
+      for (int i = ctx->lastCh; i < 4; i++){
+        printf("checking %d\n", i);
+        if (ctx->ch[i].fd){
+          ctx->lastCh = i + 1;
+          ctx->chIdx ++;
+          printf("writing to %lu\n", len);
+          return sprintf(data, "analog%d=CH%d\n", ctx->chIdx, i + 1);
+        }
+      }
+    }
+  }
+  return 0;
 }
 
 zip_int64_t zip_cb(void *userdata, void *data, zip_uint64_t len, zip_source_cmd_t command){
@@ -45,12 +93,11 @@ zip_int64_t zip_cb(void *userdata, void *data, zip_uint64_t len, zip_source_cmd_
       int format;
       int type;
       int count;
-      float xincrement;
       float xorigin;
       float xreference;
       printf("read %s\n", buff);
-      sscanf(buff, "%d,%d,%d,%d,%f,%f,%f,%f,%f,%f", &format, &type, &(ctx->total), &count, &xincrement, &xorigin, &xreference, &(ctx->yincrement), &(ctx->yorigin), &(ctx->yreference));
-      printf("parsed %d,%d,%d,%d,%f,%f,%f,%f,%f,%f\n", format, type, ctx->total, count, xincrement, xorigin, xreference, ctx->yincrement, ctx->yorigin, ctx->yreference);
+      sscanf(buff, "%d,%d,%d,%d,%f,%f,%f,%f,%f,%f", &format, &type, &(ctx->total), &count, &(ctx->xincrement), &xorigin, &xreference, &(ctx->yincrement), &(ctx->yorigin), &(ctx->yreference));
+      printf("parsed %d,%d,%d,%d,%f,%f,%f,%f,%f,%f\n", format, type, ctx->total, count, ctx->xincrement, xorigin, xreference, ctx->yincrement, ctx->yorigin, ctx->yreference);
       ctx->from = 0;
       ctx->to = 0;
   }
@@ -145,11 +192,16 @@ int main(int argc, char * argv[]){
       channels[i].fd = fd;
       struct zip_source *source = zip_source_function(zip, &zip_cb, &channels[i]);
       zip_file_add(zip, filename, source, ZIP_FL_OVERWRITE);
+    }else{
+      channels[i].fd = 0;
     }
   }
   struct zip_source *source = zip_source_buffer(zip, "2", 1, 0);
   zip_file_add(zip, "version", source, ZIP_FL_OVERWRITE);
-  source = zip_source_buffer(zip, "[device 1]\nsamplerate=500000000 Hz\ntotal analog=2\nanalog1=CH1\nanalog2=CH2", 72, 0); //TODO add channels and samplerate automaticaly
+
+  struct MetadataCtx ctx;
+  ctx.ch = channels;
+  source = zip_source_function(zip, &metadata_cb, &ctx);
   zip_file_add(zip, "metadata", source, ZIP_FL_OVERWRITE);
 
   printf("closing\n");
