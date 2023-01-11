@@ -161,8 +161,8 @@ zip_int64_t zip_cb(void *userdata, void *data, zip_uint64_t len, zip_source_cmd_
 
 
 int main(int argc, char * argv[]){
-   if (argc < 2){
-      printf("usage %s /dev/usbtmc\n", argv[0]);
+   if (argc < 3){
+      printf("usage %s /dev/usbtmc output.sr\n", argv[0]);
       return 1;
    }
   int fd = open(argv[1], O_RDWR);
@@ -176,7 +176,7 @@ int main(int argc, char * argv[]){
   buff[size] = 0;
   printf("model %s\n", buff);
 
-  zip_t *zip = zip_open("/tmp/pok.sr", ZIP_CREATE | ZIP_TRUNCATE, NULL);
+  zip_t *zip = zip_open(argv[2], ZIP_CREATE | ZIP_TRUNCATE, NULL);
   struct ChannelData channels[4];
   for (int i=0; i < 4; i++){
     cmd(fd,":CHAN%d:DISP?", i + 1); 
