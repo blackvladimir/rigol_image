@@ -55,7 +55,6 @@ zip_int64_t metadata_cb(void *userdata, void *data, zip_uint64_t len, zip_source
       }
       ctx->step = 1;
       return sprintf(data, "[device 1]\nsamplerate=%d Hz\ntotal analog=%d\n", (int)(1 / xinc), channels);
-      //source = zip_source_buffer(zip, "[device 1]\nsamplerate=500000000 Hz\ntotal analog=2\nanalog1=CH1\nanalog2=CH2", 72, 0); //TODO add channels and samplerate automaticaly
     }
     if (ctx->step == 1){
       printf("channel metadata\n");
@@ -178,6 +177,7 @@ int main(int argc, char * argv[]){
 
   zip_t *zip = zip_open(argv[2], ZIP_CREATE | ZIP_TRUNCATE, NULL);
   struct ChannelData channels[4];
+  int outChNum = 0;
   for (int i=0; i < 4; i++){
     cmd(fd,":CHAN%d:DISP?", i + 1); 
     size = read(fd, buff, 99);
@@ -187,7 +187,7 @@ int main(int argc, char * argv[]){
     if (buff[0] == '1'){
       printf("channel %d enabled\n", i + 1);
       char filename[20];
-      sprintf(filename, "analog-1-%d-1", i + 1);
+      sprintf(filename, "analog-1-%d-1", ++outChNum);
       channels[i].idx = i;
       channels[i].fd = fd;
       struct zip_source *source = zip_source_function(zip, &zip_cb, &channels[i]);
